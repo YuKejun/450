@@ -1,0 +1,3 @@
+DROP TABLE Items;
+DROP TABLE Containers;
+DROP TABLE Docks;
