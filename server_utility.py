@@ -1,4 +1,5 @@
 import db_manager
+from planning import TaskType
 import planning
 from struct import *
 import os
@@ -42,7 +43,7 @@ def request_robot(conn, addr):
     dock_id = db_manager.get_dock_id_by_ip(worker_ip)
     responsible_robot_ip = planning.nearest_free_robot_to_dock(dock_id)
     if responsible_robot_ip != "":
-        robot_perform_task(planning.Task(planning.TaskType.TO_DOCK, dock_id, 0))
+        robot_perform_task(responsible_robot_ip, planning.Task(planning.TaskType.TO_DOCK, dock_id, 0))
     conn.close()
 
 # command 1 [item_id]
@@ -63,7 +64,8 @@ def request_item(conn, addr):
         responsible_robot_ip = planning.nearest_free_robot_to_shelf(planning.ShelfLoc(row, col, slot, level),
                                                                     container_id, dock_id)
         if responsible_robot_ip != "":
-            robot_perform_task(responsible_robot_ip, planning.Task(planning.TaskType.FOR_CONTAINER, dock_id, container_id))
+            robot_perform_task(responsible_robot_ip,
+                               planning.Task(planning.TaskType.FOR_CONTAINER, dock_id, container_id))
     # if the container is to IMPORT dock or is TO_SHELF, call the robot over
     else:
         responsible_robot_ip = db_manager.get_container_carrier(container_id)
@@ -88,10 +90,10 @@ def robot_join(conn, addr):
 
 # command 3 [new_row, new_col]
 def robot_update_pos(conn, addr):
-    print("Robot " + addr[0] + " now arrives " + str(pos))
     # read new position (row, col)
     data = conn.recv(2)
     pos = unpack("BB", data)
+    print("Robot " + addr[0] + " now arrives " + str(pos))
     conn.close()
     planning.update_robot_pos(addr[0], pos[0], pos[1])
 
@@ -212,7 +214,7 @@ def worker_join(conn, addr):
 
 # command 14 []
 def worker_leave(conn, addr):
-    conn.cloes()
+    conn.close()
     db_manager.worker_leave(addr[0])
     print("Worker " + addr[0] + " is now off duty")
 
