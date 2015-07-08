@@ -60,7 +60,7 @@ def robot_arrive_dock(dock_id, robot_ip):
     cursor = db.cursor()
     # TODO: error: dock not in use; dock already occupied
     # verify that the robot is at the right dock
-    cursor.execute("SELECT dest_dockid FROM Robots WHERE robot_ip=(%s)", robot_ip)
+    cursor.execute("SELECT dest_dock_id FROM Robots WHERE robot_ip=(%s)", robot_ip)
     if cursor.fetchone()[0] != dock_id:
         # TODO: let somebody know?
         raise Exception("Robot arrives at the wrong dock")

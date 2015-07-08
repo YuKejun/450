@@ -3,14 +3,16 @@ import threading
 from socket import *
 from server_utility import *
 
+# PORT = 29876
 PORT = 29876
 
 # serving a client
 def serve_client(conn, ip):
-    data = conn.recv(1)
-    command_type = unpack("B", data)[0]
-    command_funcs[command_type](conn, ip)
-
+    result = True
+    while True:
+        data = conn.recv(1)
+        command_type = unpack("B", data)[0]
+        command_funcs[command_type](conn, ip)
     conn.close()
 
 

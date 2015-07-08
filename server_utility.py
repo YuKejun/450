@@ -3,6 +3,12 @@ from planning import TaskType
 import planning
 from struct import *
 import os
+from socket import *
+
+# global variables
+robot_sockets = {}  # IP -> socket
+worker_sockets = {}  # worker_id -> socket
+
 
 def send_route(robot_ip, robot_pos, route):
     # TODO
@@ -44,7 +50,6 @@ def request_robot(conn, addr):
     responsible_robot_ip = planning.nearest_free_robot_to_dock(dock_id)
     if responsible_robot_ip != "":
         robot_perform_task(responsible_robot_ip, planning.Task(planning.TaskType.TO_DOCK, dock_id, 0))
-    conn.close()
 
 # command 1 [item_id]
 def request_item(conn, addr):
@@ -72,14 +77,13 @@ def request_item(conn, addr):
         robot_perform_task(responsible_robot_ip, planning.Task(planning.TaskType.TO_DOCK, dock_id, 0))
         # update bookkeeping
         db_manager.set_container_status(container_id, "TO_PACKING")
-    conn.close()
 
 # command 2 []
 def robot_join(conn, addr):
     print("Robot " + addr[0] + " request to join the network")
     robot_ip = addr[0]
-    # TODO: log the socket
-    conn.close()
+    # log the socket
+    robot_sockets[robot_ip] = conn
     db_manager.robot_join(addr[0])
     # tell it where to go
     assigned_task = planning.add_free_robot(robot_ip)
@@ -94,14 +98,12 @@ def robot_update_pos(conn, addr):
     data = conn.recv(2)
     pos = unpack("BB", data)
     print("Robot " + addr[0] + " now arrives " + str(pos))
-    conn.close()
     planning.update_robot_pos(addr[0], pos[0], pos[1])
 
 # command 4 []
 def container_fetched(conn, addr):
     print("Robot " + addr[0] + " got his hand on his container")
     robot_ip = addr[0]
-    conn.close()
     dest_dock_id = db_manager.container_off_shelf(robot_ip)
     # give route to the robot to report back to the requesting dock
     robot_pos = planning.get_robot_pos(robot_ip)
@@ -112,7 +114,6 @@ def container_fetched(conn, addr):
 def container_stored(conn, addr):
     print("Robot " + addr[0] + " said goodbye to his container")
     robot_ip = addr[0]
-    conn.close()
     db_manager.update_container_pos(robot_ip)
     # tell it where to go next
     assigned_task = planning.add_free_robot(robot_ip)
@@ -125,13 +126,11 @@ def container_stored(conn, addr):
 def apply_crossing(conn, addr):
     data = conn.recv(3)
     data_list = unpack("BBB", data)
-    conn.close()
     print("Robot " + addr[0] + " apply to enter crossing " + str(data_list))
     # TODO
 
 # command 7 []
 def alarm_report(conn, addr):
-    conn.close()
     for i in range(1, 5):
         os.system('afplay /System/Library/Sounds/Submarine.aiff')
     # TODO: broadcast stopping command to everyone
@@ -139,7 +138,6 @@ def alarm_report(conn, addr):
 
 # command 8 []
 def cancel_alarm(conn, addr):
-    conn.close()
     print("Everything's good, back to work")
     # TODO
 
@@ -150,7 +148,6 @@ def check_in(conn, addr):
     data_list = unpack("BB", data)
     item_id = data_list[0]
     container_id = data_list[1]
-    conn.close()
     # register the info in DB
     db_manager.check_in_item(item_id, container_id)
     print("Item #" + str(item_id) + " has been put into container #" + str(container_id))
@@ -160,10 +157,10 @@ def check_out(conn, addr):
     robot_ip = addr[0]
     data = conn.recv(1)
     item_id = unpack("B", data)[0]
-    conn.close()
     # delete the item from DB
     container_empty = db_manager.check_out_item(item_id)
     if container_empty:
+        # TODO: decouple the robot from this dock
         # the robot is dismissed FREE
         # find a place for it to go
         assigned_task = planning.add_free_robot(robot_ip)
@@ -178,14 +175,12 @@ def check_out(conn, addr):
 def arrive_dock(conn, addr):
     data = conn.recv(1)
     dock_id = unpack("B", data)[0]
-    conn.close()
     db_manager.robot_arrive_dock(dock_id, addr[0])
     # TODO: if PACKING, tell worker app to enable "dismiss" button
     print("Robot " + addr[0] + " has arrived at dock #" + str(dock_id))
 
 # command 12 []
 def dismiss_robot(conn, addr):
-    conn.close()
     dock_id = db_manager.get_dock_id_by_ip(addr[0])
     # find the nearest empty shelf slot for the robot to put its container
     # send the route to this robot
@@ -204,7 +199,6 @@ def dismiss_robot(conn, addr):
 def worker_join(conn, addr):
     data = conn.recv(1)
     dock_id = unpack("B", data)[0]
-    conn.close()
     result = db_manager.worker_join(dock_id, addr[0])
     if result:
         print("Worker " + addr[0] + " has occupied dock #" + str(dock_id))
@@ -214,7 +208,6 @@ def worker_join(conn, addr):
 
 # command 14 []
 def worker_leave(conn, addr):
-    conn.close()
     db_manager.worker_leave(addr[0])
     print("Worker " + addr[0] + " is now off duty")
 
