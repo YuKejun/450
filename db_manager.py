@@ -4,8 +4,6 @@ HOST = 'localhost'
 USER = 'Tachikoma'
 DB = 'Tachikoma'
 
-LAST_IMPORT_DOCK = 5
-
 ################################### WORKER ####################################
 
 def worker_join(dock_id, worker_ip):
@@ -18,9 +16,12 @@ def worker_join(dock_id, worker_ip):
         db.close()
         return False
     # register this worker on this dock
-    dock_type = "IMPORT"
-    if dock_id > LAST_IMPORT_DOCK:
+    if dock_id == 1:
+        dock_type = "IMPORT"
+    elif dock_id == 2:
         dock_type = "PACKING"
+    else:
+        raise Exception("worker_join: no dock #", dock_id)
     cursor.execute("INSERT INTO Docks (dock_id, dock_type, worker_ip) VALUES (%s, %s, %s)",
                    (dock_id, dock_type, worker_ip))
     # cleanup
@@ -191,10 +192,12 @@ def container_off_shelf(robot_ip):
     (container_id, dest_dock_id) = cursor.fetchone()
     # update the container's status
     container_new_status = ""
-    if dest_dock_id <= LAST_IMPORT_DOCK:
+    if dest_dock_id == 1:
         container_new_status = "TO_IMPORT"
-    else:
+    elif dest_dock_id == 2:
         container_new_status = "TO_PACKING"
+    else:
+        raise Exception("container_off_shelf: no dock #", dest_dock_id)
     cursor.execute("UPDATE Containers SET status=(%s) WHERE container_id=(%s)", (container_new_status, container_id))
     # cleanup
     cursor.close()

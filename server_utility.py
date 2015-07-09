@@ -9,34 +9,57 @@ from socket import *
 robot_sockets = {}  # IP -> socket
 worker_sockets = {}  # worker_id -> socket
 
-
-def send_route(robot_ip, robot_pos, route):
-    # TODO
-    pass
+def send_route(robot_ip, message):
+    # TODO: loop till all sent
+    robot_sockets[robot_ip].send(message)
+    # TODO: wait till get confirmation from robot
 
 # send new route
 # (maybe) set dest_dock
 def robot_go_idle(robot_ip):
-    # TODO:
-    pass
+    robot_pos = planning.get_robot_pos(robot_ip)
+    route = planning.route_corridor_to_dock(robot_pos, 0)
+    print("robot", robot_ip, "go idle from", robot_pos, "en route", route)
+    message = pack("B" * 6, 0, 2, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+    message += planning.compile_route(route)
+    send_route(robot_ip, message)
+
+def compile_to_shelf_message(robot_pos, route, last_road_orientation, shelf_x, shelf_y, shelf_slot, shelf_level):
+    message = pack("B" * 6, 0, 0, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+    message += planning.compile_route(route)
+    if last_road_orientation == planning.Orientation.LEFT:
+        running_slot = 1 - shelf_slot
+    else:
+        running_slot = shelf_slot
+        left_right = shelf_y % 2
+    message += pack("B" * 4, running_slot, shelf_level, left_right, 0)
+    return message
 
 def robot_perform_task(robot_ip, task):
     # send new route to the robot
     robot_pos = planning.get_robot_pos(robot_ip)
     if task.type == planning.TaskType.TO_DOCK:
+        # send robot the route it needs to trace
         route = planning.route_corridor_to_dock(robot_pos, task.dest_dock_id)
-        send_route(robot_ip, robot_pos, route)
+        print("robot", robot_ip, "at", robot_pos, task, route)
+        message = pack("B" * 6, 0, 1, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+        message += planning.compile_route(route)
+        send_route(robot_ip, message)
+        # update bookkeeping
         db_manager.set_robot_dest_dock(robot_ip, task.dest_dock_id)
     else:  # task.type == planning.TaskType.FOR_CONTAINER
         # get info about the container
-        (container_id, row, col, slot, level, status) = db_manager.get_container_info(task.dest_container_id)
+        (container_id, x, y, slot, level, status) = db_manager.get_container_info(task.dest_container_id)
         if status == "ON_SHELF":
             # send new route to the robot
-            route = planning.route_corridor_to_shelf(robot_pos, planning.ShelfLoc(row, col, slot, level))
-            send_route(robot_ip, robot_pos, route)  # TODO: and many many more
+            (route, last_road_orientation) \
+                = planning.route_corridor_to_shelf(robot_pos, planning.ShelfLoc(x, y, slot, level))
+            print("robot", robot_ip, "at", robot_pos, task, route)
+            message = compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level)
+            send_route(robot_ip, message)
             # update bookkeeping
             db_manager.set_robot_dest_dock(robot_ip, task.dest_dock_id)
-            db_manager.set_robot_dest_shelf(robot_ip, row, col, slot, level)
+            db_manager.set_robot_dest_shelf(robot_ip, x, y, slot, level)
             db_manager.set_container_status(container_id, "RESERVED")
         else:
             raise Exception("robot_perform_task: Container #", container_id, " is not on shelf. Cannot fetch")
@@ -108,7 +131,10 @@ def container_fetched(conn, addr):
     # give route to the robot to report back to the requesting dock
     robot_pos = planning.get_robot_pos(robot_ip)
     route = planning.route_corridor_to_dock(robot_pos, dest_dock_id)
-    send_route(robot_ip, robot_pos, route)
+    print(route)
+    message = pack("B" * 6, 0, 1, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+    message += planning.compile_route(route)
+    send_route(robot_ip, message)
 
 # command 5 []
 def container_stored(conn, addr):
@@ -184,14 +210,22 @@ def dismiss_robot(conn, addr):
     dock_id = db_manager.get_dock_id_by_ip(addr[0])
     # find the nearest empty shelf slot for the robot to put its container
     # send the route to this robot
-    (row, col, slot, level) = planning.nearest_empty_shelf_slot(dock_id)
+    (x, y, slot, level) = planning.nearest_empty_shelf_slot(dock_id)
     robot_ip = db_manager.robot_leave_dock(dock_id)
-    route = planning.route_dock_to_shelf(dock_id, planning.ShelfLoc(row, col, slot, level))
-    send_route(robot_ip, route)
+    (route, last_road_orientation) = planning.route_dock_to_shelf(dock_id, planning.ShelfLoc(x, y, slot, level))
+    print("robot", robot_ip, "dismissed to", planning.ShelfLoc(x, y, slot, level), "en route", route)
+    if dock_id == 1:
+        robot_pos = planning.CorLoc(1, 0, 2, 0)
+    elif dock_id == 2:
+        robot_pos = planning.CorLoc(2, 0, 3, 0)
+    else:
+        raise Exception("dismiss_robot: robot", robot_ip, "dismissed from unknown dock #", dock_id)
+    message = compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level)
+    send_route(robot_ip, message)
     # update bookkeeping
-    db_manager.set_robot_dest_shelf(robot_ip, row, col, slot, level)
+    db_manager.set_robot_dest_shelf(robot_ip, x, y, slot, level)
     container_id = db_manager.get_container_on_robot(robot_ip)
-    db_manager.update_container_dest(container_id, row, col, slot, level)
+    db_manager.update_container_dest(container_id, x, y, slot, level)
     # TODO: if PACKING, tell worker app to disable "dismiss" button
     print("Robot " + addr[0] + " is dismissed")
 
