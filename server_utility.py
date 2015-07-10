@@ -1,6 +1,6 @@
 import db_manager
-from planning import TaskType
 import planning
+import highway
 from struct import *
 import os
 from socket import *
@@ -176,12 +176,13 @@ def container_stored(conn, addr):
     else:
         robot_perform_task(robot_ip, assigned_task)
 
-# command 6 [crossing_row, crossing_col, bound_direction]
+# command 6 [from_x, from_y, to_x, to_y]
 def apply_crossing(conn, addr):
-    data = conn.recv(3)
-    data_list = unpack("BBB", data)
-    print("Robot " + addr[0] + " apply to enter crossing " + str(data_list))
-    # TODO
+    robot_ip = addr[0]
+    data = conn.recv(4)
+    (from_x, from_y, to_x, to_y) = unpack("BBBB", data)
+    print("Robot " + robot_ip + " apply to enter crossing")
+    highway.apply_crossing(robot_ip, planning.CorLoc(from_x, from_y, to_x, to_y), conn)
 
 # command 7 []
 def alarm_report(conn, addr):
