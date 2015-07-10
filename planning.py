@@ -391,8 +391,8 @@ def nearest_empty_shelf_slot(dock_id):
 
 ################################### TOP LEVEL ####################################
 
-def update_robot_pos(robot_ip, row, col):
-    robot_position[robot_ip] = CorLoc(row, col)
+def update_robot_pos(robot_ip, from_x, from_y, to_x, to_y):
+    robot_position[robot_ip] = CorLoc(from_x, from_y, to_x, to_y)
 
 def get_robot_pos(robot_ip):
     return robot_position[robot_ip]

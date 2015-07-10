@@ -12,17 +12,33 @@ worker_sockets = {}  # worker_id -> socket
 def send_route(robot_ip, message):
     # TODO: loop till all sent
     robot_sockets[robot_ip].send(message)
-    # TODO: wait till get confirmation from robot
+    # wait till get confirmation from robot
+    data = robot_sockets[robot_ip].recv(1)
+    reply_status = unpack("B", data)[0]
+    if reply_status == 1:
+        return None
+    # if the robot is not at what I expect it to be
+    # receive an updated position
+    elif reply_status == 0:
+        data = robot_sockets[robot_ip].recv(4)
+        (from_x, from_y, to_x, to_y) = unpack("B" * 4, data)
+        return planning.CorLoc(from_x, from_y, to_x, to_y)
+    else:
+        raise Exception("send_route: unknown reply status", reply_status)
 
 # send new route
 # (maybe) set dest_dock
 def robot_go_idle(robot_ip):
     robot_pos = planning.get_robot_pos(robot_ip)
-    route = planning.route_corridor_to_dock(robot_pos, 0)
-    print("robot", robot_ip, "go idle from", robot_pos, "en route", route)
-    message = pack("B" * 6, 0, 2, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
-    message += planning.compile_route(route)
-    send_route(robot_ip, message)
+    while True:
+        route = planning.route_corridor_to_dock(robot_pos, 0)
+        print("robot", robot_ip, "go idle from", robot_pos, "en route", route)
+        message = pack("B" * 6, 0, 2, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+        message += planning.compile_route(route)
+        robot_pos = send_route(robot_ip, message)
+        if not robot_pos:
+            break
+        planning.update_robot_pos(robot_ip, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
 
 def compile_to_shelf_message(robot_pos, route, last_road_orientation, shelf_x, shelf_y, shelf_slot, shelf_level):
     message = pack("B" * 6, 0, 0, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
@@ -40,11 +56,15 @@ def robot_perform_task(robot_ip, task):
     robot_pos = planning.get_robot_pos(robot_ip)
     if task.type == planning.TaskType.TO_DOCK:
         # send robot the route it needs to trace
-        route = planning.route_corridor_to_dock(robot_pos, task.dest_dock_id)
-        print("robot", robot_ip, "at", robot_pos, task, route)
-        message = pack("B" * 6, 0, 1, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
-        message += planning.compile_route(route)
-        send_route(robot_ip, message)
+        while True:
+            route = planning.route_corridor_to_dock(robot_pos, task.dest_dock_id)
+            print("robot", robot_ip, "at", robot_pos, task, route)
+            message = pack("B" * 6, 0, 1, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+            message += planning.compile_route(route)
+            robot_pos = send_route(robot_ip, message)
+            if not robot_pos:
+                break
+            planning.update_robot_pos(robot_ip, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
         # update bookkeeping
         db_manager.set_robot_dest_dock(robot_ip, task.dest_dock_id)
     else:  # task.type == planning.TaskType.FOR_CONTAINER
@@ -52,11 +72,15 @@ def robot_perform_task(robot_ip, task):
         (container_id, x, y, slot, level, status) = db_manager.get_container_info(task.dest_container_id)
         if status == "ON_SHELF":
             # send new route to the robot
-            (route, last_road_orientation) \
-                = planning.route_corridor_to_shelf(robot_pos, planning.ShelfLoc(x, y, slot, level))
-            print("robot", robot_ip, "at", robot_pos, task, route)
-            message = compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level)
-            send_route(robot_ip, message)
+            while True:
+                (route, last_road_orientation) \
+                    = planning.route_corridor_to_shelf(robot_pos, planning.ShelfLoc(x, y, slot, level))
+                print("robot", robot_ip, "at", robot_pos, task, route)
+                message = compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level)
+                robot_pos = send_route(robot_ip, message)
+                if not robot_pos:
+                    break
+                planning.update_robot_pos(robot_ip, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
             # update bookkeeping
             db_manager.set_robot_dest_dock(robot_ip, task.dest_dock_id)
             db_manager.set_robot_dest_shelf(robot_ip, x, y, slot, level)
@@ -115,13 +139,14 @@ def robot_join(conn, addr):
     else:
         robot_perform_task(robot_ip, assigned_task)
 
-# command 3 [new_row, new_col]
+# command 3 [new_from_x, new_from_y, new_to_x, new_to_y]
 def robot_update_pos(conn, addr):
+    robot_ip = addr[0]
     # read new position (row, col)
-    data = conn.recv(2)
-    pos = unpack("BB", data)
-    print("Robot " + addr[0] + " now arrives " + str(pos))
-    planning.update_robot_pos(addr[0], pos[0], pos[1])
+    data = conn.recv(4)
+    (from_x, from_y, to_x, to_y) = unpack("B" * 4, data)
+    print("Robot " + robot_ip + " now arrives (", from_x, from_y, to_x, to_y, ")")
+    planning.update_robot_pos(robot_ip, from_x, from_y, to_x, to_y)
 
 # command 4 []
 def container_fetched(conn, addr):
@@ -134,7 +159,10 @@ def container_fetched(conn, addr):
     print(route)
     message = pack("B" * 6, 0, 1, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
     message += planning.compile_route(route)
-    send_route(robot_ip, message)
+    status = send_route(robot_ip, message)
+    # the robot cannot possibly have moved
+    if status:
+        raise Exception("container_fetched: robot not at its position, impossible case")
 
 # command 5 []
 def container_stored(conn, addr):
@@ -221,7 +249,10 @@ def dismiss_robot(conn, addr):
     else:
         raise Exception("dismiss_robot: robot", robot_ip, "dismissed from unknown dock #", dock_id)
     message = compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level)
-    send_route(robot_ip, message)
+    status = send_route(robot_ip, message)
+    # the robot cannot possibly have moved
+    if status:
+        raise Exception("dismiss_robot: robot has moved, impossible case")
     # update bookkeeping
     db_manager.set_robot_dest_shelf(robot_ip, x, y, slot, level)
     container_id = db_manager.get_container_on_robot(robot_ip)
