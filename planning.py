@@ -1,3 +1,5 @@
+from utility_types import *
+import highway
 from collections import namedtuple
 from enum import Enum
 from threading import Lock
@@ -5,18 +7,10 @@ from struct import pack
 import sys
 
 # define struct types
-CorLoc = namedtuple("CorLoc", "from_x, from_y, to_x, to_y")
-CrossLoc = namedtuple("CrossLoc", "x, y")
-ShelfLoc = namedtuple("ShelfLoc", "x, y, slot, level")
 class TaskType(Enum):
     TO_DOCK = 1
     FOR_CONTAINER = 2
 Task = namedtuple("Task", "type, dest_dock_id, dest_container_id")
-class Orientation(Enum):
-    UP = 1
-    RIGHT = 2
-    DOWN = 3
-    LEFT = 4
 class Direction(Enum):
     STRAIGHT = 1
     TURN_LEFT = 2
@@ -33,26 +27,6 @@ pending_tasks = []  # containing Task type
 pending_lock = Lock()
 
 ################################### ROUTING ####################################
-
-def road_orientation(cor_loc):
-    if cor_loc.from_x == cor_loc.to_x:
-        y_diff = cor_loc.to_y - cor_loc.from_y
-        if y_diff == 1:
-            return Orientation.DOWN
-        elif y_diff == -1:
-            return Orientation.UP
-        else:
-            raise Exception(str(cor_loc), "not permissible")
-    elif cor_loc.from_y == cor_loc.to_y:
-        x_diff = cor_loc.to_x - cor_loc.from_x
-        if x_diff == 1:
-            return Orientation.RIGHT
-        elif x_diff == -1:
-            return Orientation.LEFT
-        else:
-            raise Exception(str(cor_loc) + " not permissible")
-    else:
-        raise Exception(str(cor_loc) + " not permissible")
 
 # WARNING: magic number
 def is_road_legal(cor_loc):
@@ -91,16 +65,6 @@ def orientation_after_turn(o, direction):
         else:
             return Orientation.UP
 
-def opposite_orientation(o):
-    if o == Orientation.UP:
-        return Orientation.DOWN
-    elif o == Orientation.RIGHT:
-        return Orientation.LEFT
-    elif o == Orientation.DOWN:
-        return Orientation.UP
-    elif o == Orientation.LEFT:
-        return Orientation.RIGHT
-
 # return the turning direction to turn from orientation o_from to o_to
 def turn_direction_from_o_to_o(o_from, o_to):
     if o_from == o_to:
@@ -133,31 +97,6 @@ def road_after_forward_steps(src, forward_step_number):
     else:
         dest = CorLoc(src.from_x - forward_step_number, src.from_y, src.to_x - forward_step_number, src.to_y)
     return dest
-
-# return the relative orientation of point "to" with respect to point "from"
-def relative_orientation(from_x, from_y, to_x, to_y):
-    relative_orientations = []
-    if to_x > from_x:
-        relative_orientations.append(Orientation.RIGHT)
-    elif to_x < from_x:
-        relative_orientations.append(Orientation.LEFT)
-    if to_y > from_y:
-        relative_orientations.append(Orientation.DOWN)
-    elif to_y < from_y:
-        relative_orientations.append(Orientation.UP)
-    return relative_orientations
-
-def relative_orientation_and_distance(from_x, from_y, to_x, to_y):
-    offset = {}
-    if to_x > from_x:
-        offset[Orientation.RIGHT] = to_x - from_x
-    elif to_x < from_x:
-        offset[Orientation.LEFT] = from_x - to_x
-    if to_y > from_y:
-        offset[Orientation.DOWN] = to_y - from_y
-    elif to_y < from_y:
-        offset[Orientation.UP] = from_y - to_y
-    return offset
 
 # c1 and c2 are two crossing points
 # they must be in a line
@@ -306,7 +245,6 @@ def route_corridor_to_shelf(cor_loc, shelf_loc):
         shelf_corloc = corridor_on_shelf_to_left(shelf_loc)
         last_road_orientation = Orientation.LEFT
     return route_road_to_road(cor_loc, shelf_corloc), last_road_orientation
-    # TODO: which direction to load, shelf slot, level
 
 # return the route, and orientation of the last piece of the route
 def route_dock_to_shelf(dock_id, shelf_loc):
@@ -393,6 +331,7 @@ def nearest_empty_shelf_slot(dock_id):
 
 def update_robot_pos(robot_ip, from_x, from_y, to_x, to_y):
     robot_position[robot_ip] = CorLoc(from_x, from_y, to_x, to_y)
+    highway.update_robot_position_for_crossing(robot_ip, CorLoc(from_x, from_y, to_x, to_y))
 
 def get_robot_pos(robot_ip):
     return robot_position[robot_ip]

@@ -1,3 +1,4 @@
+from utility_types import *
 import db_manager
 import planning
 import highway
@@ -22,7 +23,7 @@ def send_route(robot_ip, message):
     elif reply_status == 0:
         data = robot_sockets[robot_ip].recv(4)
         (from_x, from_y, to_x, to_y) = unpack("B" * 4, data)
-        return planning.CorLoc(from_x, from_y, to_x, to_y)
+        return CorLoc(from_x, from_y, to_x, to_y)
     else:
         raise Exception("send_route: unknown reply status", reply_status)
 
@@ -43,7 +44,7 @@ def robot_go_idle(robot_ip):
 def compile_to_shelf_message(robot_pos, route, last_road_orientation, shelf_x, shelf_y, shelf_slot, shelf_level):
     message = pack("B" * 6, 0, 0, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
     message += planning.compile_route(route)
-    if last_road_orientation == planning.Orientation.LEFT:
+    if last_road_orientation == Orientation.LEFT:
         running_slot = 1 - shelf_slot
     else:
         running_slot = shelf_slot
@@ -74,7 +75,7 @@ def robot_perform_task(robot_ip, task):
             # send new route to the robot
             while True:
                 (route, last_road_orientation) \
-                    = planning.route_corridor_to_shelf(robot_pos, planning.ShelfLoc(x, y, slot, level))
+                    = planning.route_corridor_to_shelf(robot_pos, ShelfLoc(x, y, slot, level))
                 print("robot", robot_ip, "at", robot_pos, task, route)
                 message = compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level)
                 robot_pos = send_route(robot_ip, message)
@@ -113,7 +114,7 @@ def request_item(conn, addr):
         planning.pend_fetching_task_to(container_id, dock_id)
     # if the container is on shelf, try to find the nearest robot to fetch it and carry to the dock
     elif status == "ON_SHELF":
-        responsible_robot_ip = planning.nearest_free_robot_to_shelf(planning.ShelfLoc(row, col, slot, level),
+        responsible_robot_ip = planning.nearest_free_robot_to_shelf(ShelfLoc(row, col, slot, level),
                                                                     container_id, dock_id)
         if responsible_robot_ip != "":
             robot_perform_task(responsible_robot_ip,
@@ -131,11 +132,16 @@ def robot_join(conn, addr):
     robot_ip = addr[0]
     # log the socket
     robot_sockets[robot_ip] = conn
+    # WARNING: magic number
+    # TODO: more plan on what to do
+    planning.update_robot_pos(robot_ip, 0, 0, 1, 0)
     db_manager.robot_join(addr[0])
     # tell it where to go
+    # if there's no task, just to nothing
     assigned_task = planning.add_free_robot(robot_ip)
     if assigned_task is None:
-        robot_go_idle(robot_ip)
+        # robot_go_idle(robot_ip)
+        pass
     else:
         robot_perform_task(robot_ip, assigned_task)
 
@@ -182,7 +188,7 @@ def apply_crossing(conn, addr):
     data = conn.recv(4)
     (from_x, from_y, to_x, to_y) = unpack("BBBB", data)
     print("Robot " + robot_ip + " apply to enter crossing")
-    highway.apply_crossing(robot_ip, planning.CorLoc(from_x, from_y, to_x, to_y), conn)
+    highway.apply_crossing(robot_ip, CorLoc(from_x, from_y, to_x, to_y), conn)
 
 # command 7 []
 def alarm_report(conn, addr):
@@ -241,12 +247,12 @@ def dismiss_robot(conn, addr):
     # send the route to this robot
     (x, y, slot, level) = planning.nearest_empty_shelf_slot(dock_id)
     robot_ip = db_manager.robot_leave_dock(dock_id)
-    (route, last_road_orientation) = planning.route_dock_to_shelf(dock_id, planning.ShelfLoc(x, y, slot, level))
-    print("robot", robot_ip, "dismissed to", planning.ShelfLoc(x, y, slot, level), "en route", route)
+    (route, last_road_orientation) = planning.route_dock_to_shelf(dock_id, ShelfLoc(x, y, slot, level))
+    print("robot", robot_ip, "dismissed to", ShelfLoc(x, y, slot, level), "en route", route)
     if dock_id == 1:
-        robot_pos = planning.CorLoc(1, 0, 2, 0)
+        robot_pos = CorLoc(1, 0, 2, 0)
     elif dock_id == 2:
-        robot_pos = planning.CorLoc(2, 0, 3, 0)
+        robot_pos = CorLoc(2, 0, 3, 0)
     else:
         raise Exception("dismiss_robot: robot", robot_ip, "dismissed from unknown dock #", dock_id)
     message = compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level)
