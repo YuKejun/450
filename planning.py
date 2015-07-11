@@ -278,13 +278,45 @@ def compile_to_shelf_message(robot_pos, route, last_road_orientation, shelf_x, s
 
 ################################### DISTANCE ESTIMATION ####################################
 
-def dis_corridor_to_shelf(cor_loc, shelf_loc):
-    print("distance of corridor to shelf")
-    return 42
+def dis_estimate_deviation(from_x, from_y, to_x, to_y):
+    distance = 0
+    deviation = relative_orientation_and_distance(from_x, from_y, to_x, to_y)
+    if Orientation.UP in deviation.keys():
+        distance += 2 * deviation[Orientation.UP]
+    if Orientation.DOWN in deviation.keys():
+        distance += 2 * deviation[Orientation.DOWN]
+    if Orientation.RIGHT in deviation.keys():
+        distance += 3 * deviation[Orientation.RIGHT]
+    if Orientation.LEFT in deviation.keys():
+        distance += 3 * deviation[Orientation.LEFT]
+    return distance
 
-def dis_corridor_to_dock(cor_loc, dock_id):
-    print("distance of corridor to dock")
-    return 42
+def dis_estimate_corridor_to_corridor(corloc1, corloc2):
+    distances = []
+    distances.append(dis_estimate_deviation(corloc1.from_x, corloc1.from_y, corloc2.from_x, corloc2.from_y))
+    distances.append(dis_estimate_deviation(corloc1.to_x, corloc1.to_y, corloc2.from_x, corloc2.from_y))
+    distances.append(dis_estimate_deviation(corloc1.from_x, corloc1.from_y, corloc2.to_x, corloc2.to_y))
+    distances.append(dis_estimate_deviation(corloc1.to_x, corloc1.to_y, corloc2.to_x, corloc2.to_y))
+    return max(distances)
+
+def dis_estimate_corridor_to_shelf(cor_loc, shelf_x, shelf_y):
+    return dis_estimate_corridor_to_corridor(CorLoc(shelf_x, shelf_y, shelf_x+1, shelf_y), cor_loc)
+
+def dis_estimate_corridor_to_dock(cor_loc, dock_id):
+    assert dock_id == 1 or dock_id == 2, "dis_estimate_corridor_to_dock: invalid dock_id " + str(dock_id)
+    if dock_id == 1:
+        dock_corloc = CorLoc(1, 0, 2, 0)
+    elif dock_id == 2:
+        dock_corloc = CorLoc(2, 0, 3, 0)
+    return dis_estimate_corridor_to_corridor(cor_loc, dock_corloc)
+
+def dis_estimate_dock_to_shelf(dock_id, shelf_x, shelf_y):
+    assert dock_id == 1 or dock_id == 2, "dis_estimate_corridor_to_dock: invalid dock_id " + str(dock_id)
+    if dock_id == 1:
+        dock_corloc = CorLoc(1, 0, 2, 0)
+    elif dock_id == 2:
+        dock_corloc = CorLoc(2, 0, 3, 0)
+    return dis_estimate_corridor_to_shelf(dock_corloc, shelf_x, shelf_y)
 
 ################################### NEAREST ####################################
 
@@ -303,7 +335,7 @@ def nearest_free_robot_to_dock(dock_id):
     smallest_distance = sys.maxsize
     chosen_robot_ip = ""
     for ip, loc in robot_position.items():
-        distance = dis_corridor_to_dock(loc, dock_id)
+        distance = dis_estimate_corridor_to_dock(loc, dock_id)
         if distance < smallest_distance:
             smallest_distance = distance
             chosen_robot_ip = ip
@@ -328,7 +360,7 @@ def nearest_free_robot_to_shelf(shelf_loc, container_id, dock_id):
     smallest_distance = sys.maxsize
     chosen_robot_ip = ""
     for ip, loc in robot_position.items():
-        distance = dis_corridor_to_shelf(loc, shelf_loc)
+        distance = dis_estimate_corridor_to_shelf(loc, shelf_loc.x, shelf_loc.y)
         if distance < smallest_distance:
             smallest_distance = distance
             chosen_robot_ip = ip
@@ -337,8 +369,18 @@ def nearest_free_robot_to_shelf(shelf_loc, container_id, dock_id):
     return chosen_robot_ip
 
 def nearest_empty_shelf_slot(dock_id):
-    # TODO
-    return (1, 1, 1, 1)
+    shelves = []
+    for x in range(3):
+        for y in range(2, 5):
+            shelves.append((x, y))
+    shelves.sort(key = lambda s: dis_estimate_dock_to_shelf(dock_id, s[0], s[1]))
+    print("shelves in order", shelves)
+    for (x, y) in shelves:
+        empty_slots = db_manager.empty_slots_of_shelf(x, y)
+        if len(empty_slots) == 0:
+            continue
+        return x, y, empty_slots[0][0], empty_slots[0][1]
+
 
 ################################### TOP LEVEL ####################################
 

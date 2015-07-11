@@ -1,3 +1,4 @@
+from socket_utility import *
 from struct import *
 import threading
 from socket import *
@@ -10,7 +11,7 @@ PORT = 29876
 def serve_client(conn, ip):
     result = True
     while True:
-        data = conn.recv(1)
+        data = receive_message(conn, 1)
         command_type = unpack("B", data)[0]
         command_funcs[command_type](conn, ip)
     conn.close()

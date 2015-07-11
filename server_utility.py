@@ -22,7 +22,7 @@ def request_item(conn, addr):
     worker_ip = addr[0]
     dock_id = db_manager.get_dock_id_by_ip(worker_ip)
     # receive the rest of the message
-    data = conn.recv(1)
+    data = receive_message(conn, 1)
     item_id = unpack("B", data)[0]
     print("Please fetch me item #" + str(item_id))
     # get info about the container
@@ -68,7 +68,7 @@ def robot_join(conn, addr):
 def robot_update_pos(conn, addr):
     robot_ip = addr[0]
     # read new position (row, col)
-    data = conn.recv(4)
+    data = receive_message(conn, 4)
     (from_x, from_y, to_x, to_y) = unpack("B" * 4, data)
     print("Robot " + robot_ip + " now arrives (", from_x, from_y, to_x, to_y, ")")
     planning.update_robot_pos(robot_ip, from_x, from_y, to_x, to_y)
@@ -104,7 +104,7 @@ def container_stored(conn, addr):
 # command 6 [from_x, from_y, to_x, to_y]
 def apply_crossing(conn, addr):
     robot_ip = addr[0]
-    data = conn.recv(4)
+    data = receive_message(conn, 4)
     (from_x, from_y, to_x, to_y) = unpack("BBBB", data)
     print("Robot " + robot_ip + " apply to enter crossing")
     highway.apply_crossing(robot_ip, CorLoc(from_x, from_y, to_x, to_y), conn)
@@ -124,7 +124,7 @@ def cancel_alarm(conn, addr):
 # command 9 [item ID, container ID]
 def check_in(conn, addr):
     # receive further info
-    data = conn.recv(2)
+    data = receive_message(conn, 2)
     data_list = unpack("BB", data)
     item_id = data_list[0]
     container_id = data_list[1]
@@ -135,7 +135,7 @@ def check_in(conn, addr):
 # command 10 [package ID]
 def check_out(conn, addr):
     robot_ip = addr[0]
-    data = conn.recv(1)
+    data = receive_message(conn, 1)
     item_id = unpack("B", data)[0]
     # delete the item from DB
     container_empty = db_manager.check_out_item(item_id)
@@ -155,7 +155,7 @@ def check_out(conn, addr):
 # TODO: change received data to corloc, extra byte for where the grasper is
 # TODO: may arrive at REST dock, ignore, assert out others
 def arrive_dock(conn, addr):
-    data = conn.recv(1)
+    data = receive_message(conn, 1)
     dock_id = unpack("B", data)[0]
     db_manager.robot_arrive_dock(dock_id, addr[0])
     # TODO: if PACKING, tell worker app to enable "dismiss" button
@@ -189,7 +189,7 @@ def dismiss_robot(conn, addr):
 
 # command 13 [dock_id]
 def worker_join(conn, addr):
-    data = conn.recv(1)
+    data = receive_message(conn, 1)
     dock_id = unpack("B", data)[0]
     result = db_manager.worker_join(dock_id, addr[0])
     if result:

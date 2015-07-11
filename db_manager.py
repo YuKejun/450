@@ -251,6 +251,26 @@ def get_container_status(container_id):
     db.close()
     return status
 
+def empty_slots_of_shelf(x, y):
+    # initialize when all slots are empty
+    empty_slots = []
+    for i in range(2):
+        for j in range(3):
+            empty_slots.append((i, j))
+    # exclude those have been occupied by containers
+    db = pymysql.connect(host=HOST, user=USER, db=DB)
+    cursor = db.cursor()
+    cursor.execute("SELECT slot, level FROM Containers WHERE (status='ON_SHELF' OR status='RESERVED') AND x=(%s) AND y=(%s)", (x, y))
+    row_number = cursor.rowcount
+    for i in range(row_number):
+        (slot, level) = cursor.fetchone()
+        empty_slots.remove((slot, level))
+    # cleanup
+    cursor.close()
+    db.commit()
+    db.close()
+    return empty_slots
+
 
 ################################### ROBOTS ####################################
 
