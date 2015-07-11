@@ -9,7 +9,7 @@ class HighwayType(Enum):
     HORIZONTAL = 0
     VERTICAL = 1
 
-RobotInfo = namedtuple("RobotInfo", "corloc, socket")
+RobotInfo = namedtuple("RobotInfo", "corloc, conn")
 
 class HighwayManager:
     def __init__(self, highway_type, number):
@@ -63,7 +63,7 @@ class HighwayManager:
                         return True
             return False
 
-    def apply_crossing(self, robot_ip, corloc, socket):
+    def apply_crossing(self, robot_ip, corloc, conn):
         if self.type == HighwayType.HORIZONTAL:
             assert (corloc.to_y == self.number
                     and road_orientation(corloc) in [Orientation.UP, Orientation.DOWN]), \
@@ -78,19 +78,19 @@ class HighwayManager:
                 "HighwayManagger::apply_crossing: impossible application"
             # if the applicant is currently not allowed into the crossing, add it to waiting list
             if self.does_contradict_with_occupants(CrossLoc(corloc.to_x, corloc.to_y)):
-                self.waiting_robots[robot_ip] = RobotInfo(corloc, socket)
+                self.waiting_robots[robot_ip] = RobotInfo(corloc, conn)
             # otherwise, notify it that it can go, and add it to occupant list
             else:
-                socket.send(pack("B", 1))
+                conn.sendall(pack("B", 1))
                 print("roobt", robot_ip, "is permitted into crossing", self.number)
-                self.occupant_robots[robot_ip] = RobotInfo(corloc, socket)
+                self.occupant_robots[robot_ip] = RobotInfo(corloc, conn)
 
     def let_waiting_go(self):
         with self.waiting_lock:
             for robot_ip in self.waiting_robots.keys():
                 if not self.does_contradict_with_occupants(CrossLoc(self.waiting_robots[robot_ip].corloc.to_x,
                                                                          self.waiting_robots[robot_ip].corloc.to_y)):
-                    self.waiting_robots[robot_ip].socket.send(pack("B", 1))
+                    self.waiting_robots[robot_ip].conn.sendall(pack("B", 1))
                     print("roobt", robot_ip, "is permitted into crossing", self.number)
                     self.occupant_robots[robot_ip] = self.waiting_robots[robot_ip]
                     del self.waiting_robots[robot_ip]
@@ -100,7 +100,7 @@ class HighwayManager:
             if robot_ip in self.occupant_robots.keys():
                 # if the occupant is still on this highway, update its position, and check if we can let any waiting in
                 if self.is_corloc_on_highway(new_corloc):
-                    self.occupant_robots[robot_ip] = RobotInfo(new_corloc, self.occupant_robots[robot_ip].socket)
+                    self.occupant_robots[robot_ip] = RobotInfo(new_corloc, self.occupant_robots[robot_ip].conn)
                     self.let_waiting_go()
                 # otherwise, the occupant is leaving the highway
                 # delete it, and check if we can let any waiting in
@@ -116,12 +116,12 @@ highways["V1"] = HighwayManager(HighwayType.VERTICAL, 1)
 highways["V2"] = HighwayManager(HighwayType.VERTICAL, 2)
 highways["V3"] = HighwayManager(HighwayType.VERTICAL, 3)
 
-def apply_crossing(robot_ip, corloc, socket):
+def apply_crossing(robot_ip, corloc, conn):
     if road_orientation(corloc) in [Orientation.UP, Orientation.DOWN]:
         highway_code = "H" + str(corloc.to_y)
     else:
         highway_code = "V" + str(corloc.to_x)
-    highways[highway_code].apply_crossing(robot_ip, corloc, socket)
+    highways[highway_code].apply_crossing(robot_ip, corloc, conn)
 
 def update_robot_position_for_crossing(robot_ip, new_corloc):
     for highway_manager in highways.values():

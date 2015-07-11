@@ -157,13 +157,13 @@ def update_container_pos(robot_ip):
     db = pymysql.connect(host=HOST, user=USER, db=DB)
     cursor = db.cursor()
     # get the container_id being carried and the robot's destination
-    cursor.execute("SELECT container_id, dest_row, dest_col, dest_slot, dest_level FROM Robots WHERE robot_ip=(%s)", robot_ip)
+    cursor.execute("SELECT container_id, dest_x, dest_y, dest_slot, dest_level FROM Robots WHERE robot_ip=(%s)", robot_ip)
     if cursor.rowcount == 0:
         raise Exception("update_container_pos: No container on robot ", robot_ip)
-    (container_id, dest_row, dest_col, dest_slot, dest_level) = cursor.fetchone()
+    (container_id, dest_x, dest_y, dest_slot, dest_level) = cursor.fetchone()
     # update the container's new position
-    cursor.execute("UPDATE Containers SET status='ON_SHELF', row=(%s), col=(%s), slot=(%s), level=(%s) WHERE container_id=(%s)",
-                   (dest_row, dest_col, dest_slot, dest_level, container_id))
+    cursor.execute("UPDATE Containers SET status='ON_SHELF', x=(%s), y=(%s), slot=(%s), level=(%s) WHERE container_id=(%s)",
+                   (dest_x, dest_y, dest_slot, dest_level, container_id))
     # clear the robot's container_id record
     cursor.execute("UPDATE Robots SET container_id=NULL where robot_ip=(%s)", robot_ip)
     # cleanup
@@ -171,11 +171,11 @@ def update_container_pos(robot_ip):
     db.commit()
     db.close()
 
-def update_container_dest(container_id, dest_row, dest_col, dest_slot, dest_level):
+def update_container_dest(container_id, dest_x, dest_y, dest_slot, dest_level):
     db = pymysql.connect(host=HOST, user=USER, db=DB)
     cursor = db.cursor()
-    cursor.execute("UPDATE Containers SET status='TO_SHELF', row=(%s), col=(%s), slot=(%s), level=(%s) WHERE container_id=(%s)",
-                   (dest_row, dest_col, dest_slot, dest_level, container_id))
+    cursor.execute("UPDATE Containers SET status='TO_SHELF', x=(%s), y=(%s), slot=(%s), level=(%s) WHERE container_id=(%s)",
+                   (dest_x, dest_y, dest_slot, dest_level, container_id))
     # cleanup
     cursor.close()
     db.commit()
@@ -276,11 +276,23 @@ def set_robot_dest_dock(robot_ip, dock_id):
     db.commit()
     db.close()
 
-def set_robot_dest_shelf(robot_ip, row, col, slot, level):
+def get_robot_dest_dock(robot_ip):
     db = pymysql.connect(host=HOST, user=USER, db=DB)
     cursor = db.cursor()
-    cursor.execute("UPDATE Robots SET dest_row=(%s), dest_col=(%s), dest_slot=(%s), dest_level=(%s) WHERE robot_ip=(%s)",
-                   (row, col, slot, level, robot_ip))
+    cursor.execute("SELECT dest_dock_id FROM Robots WHERE robot_ip=(%s)", robot_ip)
+    if cursor.rowcount == 0:
+        raise Exception("get_robot_dest_dock: No known robot ", robot_ip)
+    dest_dock_id = cursor.fetchone()[0]
+    cursor.close()
+    db.commit()
+    db.close()
+    return dest_dock_id
+
+def set_robot_dest_shelf(robot_ip, x, y, slot, level):
+    db = pymysql.connect(host=HOST, user=USER, db=DB)
+    cursor = db.cursor()
+    cursor.execute("UPDATE Robots SET dest_x=(%s), dest_y=(%s), dest_slot=(%s), dest_level=(%s) WHERE robot_ip=(%s)",
+                   (x, y, slot, level, robot_ip))
     cursor.close()
     db.commit()
     db.close()

@@ -1,9 +1,11 @@
 from utility_types import *
+from socket_utility import *
 import highway
+import db_manager
 from collections import namedtuple
 from enum import Enum
 from threading import Lock
-from struct import pack
+from struct import pack, unpack
 import sys
 
 # define struct types
@@ -263,6 +265,17 @@ def route_dock_to_shelf(dock_id, shelf_loc):
 def compile_route(route):
     return pack("B" * (len(route) + 1), len(route), *route)
 
+def compile_to_shelf_message(robot_pos, route, last_road_orientation, shelf_x, shelf_y, shelf_slot, shelf_level):
+    message = pack("B" * 6, 0, 0, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+    message += compile_route(route)
+    if last_road_orientation == Orientation.LEFT:
+        running_slot = 1 - shelf_slot
+    else:
+        running_slot = shelf_slot
+        left_right = shelf_y % 2
+    message += pack("B" * 4, running_slot, shelf_level, left_right, 0)
+    return message
+
 ################################### DISTANCE ESTIMATION ####################################
 
 def dis_corridor_to_shelf(cor_loc, shelf_loc):
@@ -275,7 +288,7 @@ def dis_corridor_to_dock(cor_loc, dock_id):
 
 ################################### NEAREST ####################################
 
-# return "" if no free robots at the moment
+# return "" if no free robots at the moment, and the task will be added into pending list
 def nearest_free_robot_to_dock(dock_id):
     print("nearest robot to dock #" + str(dock_id))
     # if there's no free robot, add the task to pending list
@@ -336,17 +349,115 @@ def update_robot_pos(robot_ip, from_x, from_y, to_x, to_y):
 def get_robot_pos(robot_ip):
     return robot_position[robot_ip]
 
+################################### TASK MANAGEMENT ####################################
+
+# send new route to the robot, and waits for reply
+# return None if everything OK
+# otherwise return the actual position of the robot
+def send_route(robot_ip, message):
+    robot_sockets[robot_ip].sendall(message)
+    # wait till get confirmation from robot
+    data = receive_message(robot_sockets[robot_ip], 1)
+    reply_status = unpack("B", data)[0]
+    if reply_status == 1:
+        return None
+    # if the robot is not at what I expect it to be
+    # receive an updated position
+    elif reply_status == 0:
+        data = receive_message(robot_sockets[robot_ip], 4)
+        (from_x, from_y, to_x, to_y) = unpack("B" * 4, data)
+        return CorLoc(from_x, from_y, to_x, to_y)
+    else:
+        raise Exception("send_route: unknown reply status", reply_status)
+
+# send new route
+# (maybe) set dest_dock
+def robot_go_idle(robot_ip):
+    robot_pos = get_robot_pos(robot_ip)
+    while True:
+        route = route_corridor_to_dock(robot_pos, 0)
+        print("robot", robot_ip, "go idle from", robot_pos, "en route", route)
+        message = pack("B" * 6, 0, 2, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+        message += compile_route(route)
+        robot_pos = send_route(robot_ip, message)
+        if not robot_pos:
+            break
+        update_robot_pos(robot_ip, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+
+def robot_perform_task(robot_ip, task):
+    # send new route to the robot
+    robot_pos = get_robot_pos(robot_ip)
+    if task.type == TaskType.TO_DOCK:
+        # send robot the route it needs to trace
+        while True:
+            route = route_corridor_to_dock(robot_pos, task.dest_dock_id)
+            print("robot", robot_ip, "at", robot_pos, task, route)
+            message = pack("B" * 6, 0, 1, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+            message += compile_route(route)
+            robot_pos = send_route(robot_ip, message)
+            if not robot_pos:
+                break
+            update_robot_pos(robot_ip, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+        # update bookkeeping
+        db_manager.set_robot_dest_dock(robot_ip, task.dest_dock_id)
+    else:  # task.type == planning.TaskType.FOR_CONTAINER
+        # get info about the container
+        (container_id, x, y, slot, level, status) = db_manager.get_container_info(task.dest_container_id)
+        if status == "ON_SHELF":
+            # send new route to the robot
+            while True:
+                (route, last_road_orientation) \
+                    = route_corridor_to_shelf(robot_pos, ShelfLoc(x, y, slot, level))
+                print("robot", robot_ip, "at", robot_pos, task, route)
+                message = compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level)
+                robot_pos = send_route(robot_ip, message)
+                if not robot_pos:
+                    break
+                update_robot_pos(robot_ip, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
+            # update bookkeeping
+            db_manager.set_robot_dest_dock(robot_ip, task.dest_dock_id)
+            db_manager.set_robot_dest_shelf(robot_ip, x, y, slot, level)
+            db_manager.set_container_status(container_id, "RESERVED")
+        else:
+            raise Exception("robot_perform_task: Container #", container_id, " is not on shelf. Cannot fetch")
+
 # return a task for the free robot to perform
 # or return None when there's no suitable task and the robot is added to the free list
 def add_free_robot(robot_ip):
     with free_list_lock, pending_lock:
-        # if there's pending task to do, assign the first to this robot
-        if len(pending_tasks) != 0:
-            task = pending_tasks.pop(0)
-            # TODO: check if the task is performable (?)
-            # if there's FETCHING job where container is TO_SHELF or TO_IMPORT, get it done with that carrier robot
+        i = 0
+        while len(pending_tasks) > 0:
+            task = pending_tasks[i]
+            if task.type == TaskType.FOR_CONTAINER:
+                (container_id, row, col, slot, level, status) = db_manager.get_container_info(task.dest_container_id)
+                # if the task is a FETCHING job where the requested container is TO_SHELF,
+                # re-assign task to that robot TO_PACKING
+                if status == "TO_SHELF":
+                    carrier_robot_ip = db_manager.get_container_carrier(task.dest_container_id)
+                    robot_perform_task(carrier_robot_ip, Task(TaskType.TO_DOCK, task.dest_dock_id, 0))
+                    # update bookkeeping
+                    db_manager.set_container_status(container_id, "TO_PACKING")
+                    pending_tasks.pop(i)
+                    continue
+                # if the task is a FETCHING job where the requested container is TO_IMPORT,
+                # re-assign task to that robot TO_PACKING
+                # and let this newly added robot to the TO_IMPORT instead
+                elif status == "TO_IMPORT":
+                    carrier_robot_ip = db_manager.get_container_carrier(task.dest_container_id)
+                    destined_import_dock_id = db_manager.get_robot_dest_dock(carrier_robot_ip)
+                    robot_perform_task(carrier_robot_ip, Task(TaskType.TO_DOCK, task.dest_dock_id, 0))
+                    db_manager.set_container_status(container_id, "TO_PACKING")
+                    pending_tasks.pop(i)
+                    return Task(TaskType.TO_DOCK, destined_import_dock_id, 0)
+                # if the task is a FETCHING job where the requested container is RESERVED or TO_PACKING,
+                # it cannot be done now, skip, try the next task
+                elif status == "RESERVED" or status == "TO_PACKING":
+                    i += 1
+                    continue
+            # otherwise, the task is do-able, assign it to this newly added robot
+            pending_tasks.pop(i)
             return task
-        # otherwise, add the robot to free list
-        else:
-            free_robots.append(robot_ip)
-            return None
+        # if there's no task can be done, add the robot to free list
+        free_robots.append(robot_ip)
+        return None
+
