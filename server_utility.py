@@ -176,7 +176,7 @@ def dismiss_robot(conn, addr):
         robot_pos = CorLoc(2, 0, 3, 0)
     else:
         raise Exception("dismiss_robot: robot", robot_ip, "dismissed from unknown dock #", dock_id)
-    message = planning.compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level)
+    message = planning.compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level, True)
     status = planning.send_route(robot_ip, message)
     # the robot cannot possibly have moved
     assert not status, "dismiss_robot: robot has moved, impossible case"
@@ -203,7 +203,11 @@ def worker_leave(conn, addr):
     db_manager.worker_leave(addr[0])
     print("Worker " + addr[0] + " is now off duty")
 
+# command 15 []
+def arrive_rest(conn, addr):
+    print("Robot", addr[0], "has arrived REST top")
+
 
 command_funcs = [request_robot, request_item, robot_join, robot_update_pos, container_fetched, container_stored,
                  apply_crossing, alarm_report, cancel_alarm, check_in, check_out, arrive_dock, dismiss_robot,
-                 worker_join, worker_leave]
+                 worker_join, worker_leave, arrive_rest]

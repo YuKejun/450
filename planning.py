@@ -265,15 +265,15 @@ def route_dock_to_shelf(dock_id, shelf_loc):
 def compile_route(route):
     return pack("B" * (len(route) + 1), len(route), *route)
 
-def compile_to_shelf_message(robot_pos, route, last_road_orientation, shelf_x, shelf_y, shelf_slot, shelf_level):
+def compile_to_shelf_message(robot_pos, route, last_road_orientation, shelf_x, shelf_y, shelf_slot, shelf_level, is_store):
     message = pack("B" * 6, 0, 0, robot_pos.from_x, robot_pos.from_y, robot_pos.to_x, robot_pos.to_y)
     message += compile_route(route)
     if last_road_orientation == Orientation.LEFT:
         running_slot = 1 - shelf_slot
     else:
         running_slot = shelf_slot
-        left_right = shelf_y % 2
-    message += pack("B" * 4, running_slot, shelf_level, left_right, 0)
+    left_right = shelf_y % 2
+    message += pack("B" * 4, running_slot, shelf_level, left_right, is_store)
     return message
 
 ################################### DISTANCE ESTIMATION ####################################
@@ -451,7 +451,7 @@ def robot_perform_task(robot_ip, task):
                 (route, last_road_orientation) \
                     = route_corridor_to_shelf(robot_pos, ShelfLoc(x, y, slot, level))
                 print("robot", robot_ip, "at", robot_pos, task, route)
-                message = compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level)
+                message = compile_to_shelf_message(robot_pos, route, last_road_orientation, x, y, slot, level, False)
                 robot_pos = send_route(robot_ip, message)
                 if not robot_pos:
                     break
