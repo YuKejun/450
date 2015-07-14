@@ -22,8 +22,9 @@ class Direction(Enum):
 robot_position = {}
 free_robots = []    # containing IPs of robots
                     # to be locked
-robots_on_rest = []
 free_list_lock = Lock()
+robots_on_rest = []
+rest_lock = Lock()
 pending_tasks = []  # containing Task type
                     #  to be locked
 pending_lock = Lock()
@@ -324,49 +325,50 @@ def dis_estimate_dock_to_shelf(dock_id, shelf_x, shelf_y):
 def nearest_free_robot_to_dock(dock_id):
     print("nearest robot to dock #" + str(dock_id))
     # if there's no free robot, add the task to pending list
-    free_list_lock.acquire()
-    if len(free_robots) == 0:
-        pending_lock.acquire()
-        pending_tasks.append(Task(TaskType.TO_DOCK, dock_id, 0))
-        pending_lock.release()
-        free_list_lock.release()
-        return ""
-    # find the nearest among the free robots
-    smallest_distance = sys.maxsize
-    chosen_robot_ip = ""
-    for ip, loc in robot_position.items():
-        distance = dis_estimate_corridor_to_dock(loc, dock_id)
-        if distance < smallest_distance:
-            smallest_distance = distance
-            chosen_robot_ip = ip
-    free_robots.remove(chosen_robot_ip)
-    free_list_lock.release()
-    return chosen_robot_ip
+    with free_list_lock:
+        if len(free_robots) == 0:
+            with pending_lock:
+                pending_tasks.append(Task(TaskType.TO_DOCK, dock_id, 0))
+            return ""
+        # find the nearest among the free robots
+        smallest_distance = sys.maxsize
+        chosen_robot_ip = ""
+        for ip, loc in robot_position.items():
+            distance = dis_estimate_corridor_to_dock(loc, dock_id)
+            if distance < smallest_distance:
+                smallest_distance = distance
+                chosen_robot_ip = ip
+        # if the robot is in REST area, call the line head instead
+        chosen_robot_ip = try_call_rest_robot(chosen_robot_ip)
+        # mark the chosen robot busy
+        free_robots.remove(chosen_robot_ip)
+        return chosen_robot_ip
 
 def pend_fetching_task_to(container_id, dock_id):
-    pending_lock.acquire()
-    pending_tasks.append(Task(TaskType.FOR_CONTAINER, dock_id, container_id))
-    pending_lock.release()
+    with pending_lock:
+        pending_tasks.append(Task(TaskType.FOR_CONTAINER, dock_id, container_id))
+
 # return "" if no free robots at the moment
 def nearest_free_robot_to_shelf(shelf_loc, container_id, dock_id):
     print("nearest robot to shelf")
     # if there's no free robot, add the task to pending list
-    free_list_lock.acquire()
-    if len(free_robots) == 0:
-        pend_fetching_task_to(container_id, dock_id)
-        free_list_lock.release()
-        return ""
-    # find the nearest among the free robots
-    smallest_distance = sys.maxsize
-    chosen_robot_ip = ""
-    for ip, loc in robot_position.items():
-        distance = dis_estimate_corridor_to_shelf(loc, shelf_loc.x, shelf_loc.y)
-        if distance < smallest_distance:
-            smallest_distance = distance
-            chosen_robot_ip = ip
-    free_robots.remove(chosen_robot_ip)
-    free_list_lock.release()
-    return chosen_robot_ip
+    with free_list_lock:
+        if len(free_robots) == 0:
+            pend_fetching_task_to(container_id, dock_id)
+            return ""
+        # find the nearest among the free robots
+        smallest_distance = sys.maxsize
+        chosen_robot_ip = ""
+        for ip, loc in robot_position.items():
+            distance = dis_estimate_corridor_to_shelf(loc, shelf_loc.x, shelf_loc.y)
+            if distance < smallest_distance:
+                smallest_distance = distance
+                chosen_robot_ip = ip
+        # if the robot is in REST area, call the line head instead
+        chosen_robot_ip = try_call_rest_robot(chosen_robot_ip)
+        # mark the chosen robot busy
+        free_robots.remove(chosen_robot_ip)
+        return chosen_robot_ip
 
 def nearest_empty_shelf_slot(dock_id, grasper_on_right):
     shelves = []
@@ -382,11 +384,34 @@ def nearest_empty_shelf_slot(dock_id, grasper_on_right):
         return x, y, empty_slots[0][0], empty_slots[0][1]
 
 
+################################### REST ####################################
+
+def robot_enter_rest(robot_ip):
+    print("robot", robot_ip, "enters REST area")
+    with rest_lock:
+        assert robot_ip not in robots_on_rest, "robot_rest: robot " + robot_ip + " already in REST area"
+        robots_on_rest.append(robot_ip)
+
+# if the given robot is in REST area, return the robot at the head of the REST line instead,
+# and label that robot out of line
+# otherwise, return the same robot
+def try_call_rest_robot(robot_ip):
+    with rest_lock:
+        if robot_ip in robots_on_rest:
+            print("A robot chosen out of REST area")
+            return robots_on_rest.pop(0)
+        else:
+            return robot_ip
+
+
 ################################### TOP LEVEL ####################################
 
 def update_robot_pos(robot_ip, from_x, from_y, to_x, to_y):
     robot_position[robot_ip] = CorLoc(from_x, from_y, to_x, to_y)
     highway.update_robot_position_for_crossing(robot_ip, CorLoc(from_x, from_y, to_x, to_y))
+    # if the robot is entering REST area, log it
+    if (from_x, from_y, to_x, to_y) == (0, 1, 0, 0):
+        robot_enter_rest(robot_ip)
 
 def get_robot_pos(robot_ip):
     return robot_position[robot_ip]

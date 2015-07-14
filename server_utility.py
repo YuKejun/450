@@ -54,14 +54,12 @@ def robot_join(conn, addr):
     # WARNING: magic number
     # TODO: more plan on what to do
     planning.update_robot_pos(robot_ip, 0, 0, 1, 0)
+    planning.robot_enter_rest(robot_ip)
     db_manager.robot_join(addr[0])
     # tell it where to go
     # if there's no task, just to nothing
     assigned_task = planning.add_free_robot(robot_ip)
-    if assigned_task is None:
-        # robot_go_idle(robot_ip)
-        pass
-    else:
+    if assigned_task is not None:
         planning.robot_perform_task(robot_ip, assigned_task)
 
 # command 3 [new_from_x, new_from_y, new_to_x, new_to_y]
@@ -72,7 +70,6 @@ def robot_update_pos(conn, addr):
     (from_x, from_y, to_x, to_y) = unpack("B" * 4, data)
     print("Robot " + robot_ip + " now arrives (", from_x, from_y, to_x, to_y, ")")
     planning.update_robot_pos(robot_ip, from_x, from_y, to_x, to_y)
-    # TODO: if it enters the REST area, log it
 
 # command 4 []
 def container_fetched(conn, addr):
