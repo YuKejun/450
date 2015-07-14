@@ -18,7 +18,7 @@ CREATE TABLE Docks (
     dock_type ENUM("PACKING", "IMPORT") NOT NULL, 
     worker_ip VARCHAR(20) UNIQUE NOT NULL, 
     robot_ip VARCHAR(20) UNIQUE DEFAULT NULL, -- the robot now at this dock
-    grasper_position ENUM("LEFT", "RIGHT")
+    grasper_position ENUM("LEFT", "RIGHT") DEFAULT NULL
 );
 
 CREATE TABLE Robots (

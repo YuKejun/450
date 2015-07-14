@@ -368,10 +368,10 @@ def nearest_free_robot_to_shelf(shelf_loc, container_id, dock_id):
     free_list_lock.release()
     return chosen_robot_ip
 
-def nearest_empty_shelf_slot(dock_id):
+def nearest_empty_shelf_slot(dock_id, grasper_on_right):
     shelves = []
     for x in range(3):
-        for y in range(2, 5):
+        for y in range(2 + int(grasper_on_right), 5, 2):
             shelves.append((x, y))
     shelves.sort(key = lambda s: dis_estimate_dock_to_shelf(dock_id, s[0], s[1]))
     print("shelves in order", shelves)

@@ -151,22 +151,30 @@ def check_out(conn, addr):
         # TODO: tell worker app to disable "dismiss" button
     print("Item #" + str(item_id) + " has been checked out")
 
-# command 11 [dock_id]
-# TODO: change received data to corloc, extra byte for where the grasper is
+# command 11 [from_x, from_y, to_x, to_y, is_grasper_left]
 # TODO: may arrive at REST dock, ignore, assert out others
 def arrive_dock(conn, addr):
-    data = receive_message(conn, 1)
-    dock_id = unpack("B", data)[0]
-    db_manager.robot_arrive_dock(dock_id, addr[0])
+    robot_ip = addr[0]
+    data = receive_message(conn, 5)
+    (from_x, from_y, to_x, to_y, is_grasper_left) = unpack("B" * 5, data)
+    # interpret which dock has been arrived
+    assert (from_x, from_y, to_x, to_y) in [(1, 0, 2, 0), (2, 0, 3, 0)], "arrive_dock: reported position not at a dock"
+    if (from_x, from_y, to_x, to_y) == (1, 0, 2, 0):
+        dock_id = 1
+    elif (from_x, from_y, to_x, to_y) == (2, 0, 3, 0):
+        dock_id = 2
+    db_manager.robot_arrive_dock(dock_id, robot_ip, is_grasper_left)
     # TODO: if PACKING, tell worker app to enable "dismiss" button
     print("Robot " + addr[0] + " has arrived at dock #" + str(dock_id))
 
 # command 12 []
 def dismiss_robot(conn, addr):
     dock_id = db_manager.get_dock_id_by_ip(addr[0])
+    # find where the grasper for the robot is
+    is_grasper_right = db_manager.is_on_dock_robot_grasper_on_right(dock_id)
     # find the nearest empty shelf slot for the robot to put its container
     # send the route to this robot
-    (x, y, slot, level) = planning.nearest_empty_shelf_slot(dock_id)
+    (x, y, slot, level) = planning.nearest_empty_shelf_slot(dock_id, is_grasper_right)
     robot_ip = db_manager.robot_leave_dock(dock_id)
     (route, last_road_orientation) = planning.route_dock_to_shelf(dock_id, ShelfLoc(x, y, slot, level))
     print("robot", robot_ip, "dismissed to", ShelfLoc(x, y, slot, level), "en route", route)

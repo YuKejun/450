@@ -56,7 +56,7 @@ def get_dock_id_by_ip(worker_ip):
     db.close()
     return dock_id
 
-def robot_arrive_dock(dock_id, robot_ip):
+def robot_arrive_dock(dock_id, robot_ip, is_grasper_left):
     db = pymysql.connect(host=HOST, user=USER, db=DB)
     cursor = db.cursor()
     # TODO: error: dock not in use; dock already occupied
@@ -66,10 +66,31 @@ def robot_arrive_dock(dock_id, robot_ip):
         # TODO: let somebody know?
         raise Exception("Robot arrives at the wrong dock")
     # let the dock aware of the new robot arriving
-    cursor.execute("UPDATE Docks SET robot_ip=(%s) WHERE dock_id=(%s)", (robot_ip, dock_id))
+    if is_grasper_left:
+        grasper_position = "LEFT"
+    else:
+        grasper_position = "RIGHT"
+    cursor.execute("UPDATE Docks SET robot_ip=(%s), grasper_position=(%s) WHERE dock_id=(%s)",
+                   (robot_ip, grasper_position, dock_id))
     cursor.close()
     db.commit()
     db.close()
+
+def is_on_dock_robot_grasper_on_right(dock_id):
+    db = pymysql.connect(host=HOST, user=USER, db=DB)
+    cursor = db.cursor()
+    cursor.execute("SELECT grasper_position FROM Docks WHERE dock_id=(%s)", dock_id)
+    assert cursor.rowcount == 1, "is_on_dock_robot_grasper_on_right: no dock #" + str(dock_id)
+    grasper_position = cursor.fetchone()[0]
+    assert grasper_position != "NULL", "is_on_dock_robot_grasper_on_right: no robot on dock #" + str(dock_id)
+    if grasper_position == "LEFT":
+        is_grasper_right = False
+    else:
+        is_grasper_right = True
+    cursor.close()
+    db.commit()
+    db.close()
+    return is_grasper_right
 
 # return: IP of the robot at this dock when the function is called
 def robot_leave_dock(dock_id):
@@ -83,7 +104,7 @@ def robot_leave_dock(dock_id):
     if robot_ip == "NULL":
         raise Exception("robot_leave_dock: No robot currently at dock #", dock_id)
     # release this robot from this dock
-    cursor.execute("UPDATE Docks SET robot_ip=NULL WHERE robot_ip=(%s)", robot_ip)
+    cursor.execute("UPDATE Docks SET robot_ip=NULL, grasper_position=NULL WHERE robot_ip=(%s)", robot_ip)
     cursor.close()
     db.commit()
     db.close()
