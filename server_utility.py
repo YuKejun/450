@@ -27,7 +27,12 @@ def request_item(conn, addr):
     item_id = unpack("B", data)[0]
     print("Please fetch me item #" + str(item_id))
     # get info about the container
-    (container_id, row, col, slot, level, status) = db_manager.locate_item(item_id)
+    result = db_manager.locate_item(item_id)
+    if not result:
+        # the item does not exist, reply to the app [6]
+        send_message(worker_sockets[dock_id], pack("B", 6))
+        return
+    (container_id, row, col, slot, level, status) = result
     # tell the worker app in which container the requested item is
     send_message(worker_sockets[dock_id], pack("BB", 4, container_id))
     # if the container is going to PACKING dock or has been reserved, we can't do it now
@@ -178,6 +183,8 @@ def dismiss_robot(conn, addr):
             planning.robot_go_idle(robot_ip)
         else:
             planning.robot_perform_task(robot_ip, assigned_task)
+        return
+    # otherwise
     # find the nearest empty shelf slot for the robot to put its container
     # send the route to this robot
     (x, y, slot, level) = planning.nearest_empty_shelf_slot(dock_id, is_grasper_right)

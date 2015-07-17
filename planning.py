@@ -252,10 +252,19 @@ def corridor_on_shelf_to_right(shelf_loc):
 
 def route_corridor_to_shelf(cor_loc, shelf_loc):
     print("corridor", cor_loc, "to shelf", shelf_loc)
-    # this function cannot be called in dock area
-    assert cor_loc not in [CorLoc(0, 1, 0, 0), CorLoc(0, 0, 1, 0), CorLoc(1, 1, 1, 0), CorLoc(1, 0, 2, 0),
-                           CorLoc(2, 1, 2, 0), CorLoc(2, 0, 3, 0)], "route_corridor_to_shelf: cannot be planned from dock area"
-    # if the robot is in REST area
+    # special cases: the robot is in REST area
+    if cor_loc == CorLoc(0, 0, 1, 0):
+        return route_dock_to_shelf(0, shelf_loc)
+    elif cor_loc == CorLoc(0, 1, 0, 0):
+        (route, last_road_orientation) = route_dock_to_shelf(0, shelf_loc)
+        return [Direction.TURN_RIGHT.value] + route, last_road_orientation
+    elif cor_loc == CorLoc(1, 0, 2, 0):
+        return route_dock_to_shelf(1, shelf_loc)
+    elif cor_loc == CorLoc(2, 0, 3, 0):
+        return route_dock_to_shelf(2, shelf_loc)
+    # this function cannot be called in worker dock area
+    assert cor_loc not in [CorLoc(1, 1, 1, 0), CorLoc(2, 1, 2, 0)], "route_corridor_to_shelf: cannot be planned from dock area"
+    # normal cases
     if cor_loc.to_x <= shelf_loc.x:
         shelf_corloc = corridor_on_shelf_to_right(shelf_loc)
         last_road_orientation = Orientation.RIGHT
@@ -506,6 +515,7 @@ def robot_perform_task(robot_ip, task):
             # update bookkeeping
             db_manager.set_robot_dest_dock(robot_ip, task.dest_dock_id)
             db_manager.set_robot_dest_shelf(robot_ip, x, y, slot, level)
+            db_manager.set_robot_container(robot_ip, task.dest_container_id)
             db_manager.set_container_status(container_id, "RESERVED")
         else:
             raise Exception("robot_perform_task: Container #", container_id, " is not on shelf. Cannot fetch")

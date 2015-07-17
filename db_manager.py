@@ -164,12 +164,16 @@ def check_out_item(item_id):
     return container_empty
 
 def locate_item(item_id):
+    '''
+    Find information about the container for this item. If the item does not exist, return None
+    '''
     db = pymysql.connect(host=HOST, user=USER, db=DB)
     cursor = db.cursor()
     # find which container this item is in
     cursor.execute("SELECT container_id FROM Items WHERE item_id=(%s)", item_id)
     if cursor.rowcount == 0:
-        raise Exception("No item #" + str(item_id))
+        print("No item #", item_id)
+        return None
     container_id = cursor.fetchone()[0]
     # find the status and position of that container
     cursor.execute("SELECT * FROM Containers WHERE container_id=(%s)", container_id)
