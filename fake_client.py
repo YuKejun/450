@@ -31,4 +31,13 @@ while True:
             data = client.recv(1)
             reply = unpack("B", data)[0]
         print("Go!")
+    # if worker apply to join, block to receive accept or reject
+    elif num_list[0] == 13:
+        reply = unpack("B", client.recv(1))[0]
+        if reply == 2:
+            print("request accepted")
+        elif reply == 3:
+            print("request denied")
+        else:
+            raise Exception("Unrecognized reply")
 client.close()

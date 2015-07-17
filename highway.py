@@ -16,9 +16,9 @@ class HighwayManager:
         self.type = highway_type
         self.number = number
 
-        self.occupant_robots = {}
+        self.occupant_robots = {}  # IP -> RobotInfo
         self.occupant_lock = Lock()
-        self.waiting_robots = {}
+        self.waiting_robots = {}  # IP -> RobotInfo
         self.waiting_lock = Lock()
 
     def is_corloc_on_highway(self, corloc):
@@ -109,6 +109,16 @@ class HighwayManager:
                     del self.occupant_robots[robot_ip]
                     self.let_waiting_go()
 
+    def delete_robot(self, robot_ip):
+        with self.occupant_lock, self.waiting_lock:
+            # if the robot is waiting, simply drop it
+            if robot_ip in self.waiting_robots.keys():
+                del self.waiting_robots[robot_ip]
+            # if the robot is an occupant, delete it, and notify waiting to go
+            elif robot_ip in self.occupant_robots.keys():
+                del self.occupant_robots[robot_ip]
+                self.let_waiting_go()
+
 highways = {}
 highways["H1"] = HighwayManager(HighwayType.HORIZONTAL, 1)
 highways["V0"] = HighwayManager(HighwayType.VERTICAL, 0)
@@ -126,3 +136,7 @@ def apply_crossing(robot_ip, corloc, conn):
 def update_robot_position_for_crossing(robot_ip, new_corloc):
     for highway_manager in highways.values():
         highway_manager.update_robot_position(robot_ip, new_corloc)
+
+def delete_robot_from_crossings(robot_ip):
+    for highway_manager in highways.values():
+        highway_manager.delete_robot(robot_ip)

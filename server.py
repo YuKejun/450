@@ -8,12 +8,11 @@ from server_utility import *
 PORT = 29876
 
 # serving a client
-def serve_client(conn, ip):
-    result = True
+def serve_client(conn, addr):
     while True:
         data = receive_message(conn, 1)
         command_type = unpack("B", data)[0]
-        command_funcs[command_type](conn, ip)
+        command_funcs[command_type](conn, addr)
     conn.close()
 
 

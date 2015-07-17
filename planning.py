@@ -217,6 +217,18 @@ def route_road_to_road(src, dest):
 
 def route_corridor_to_dock(cor_loc, dock_id):
     print("corridor", cor_loc, "to dock", dock_id)
+    # special cases: robot in REST area is called to IMPORT dock
+    if cor_loc == CorLoc(0, 1, 0, 0) and dock_id == 1:
+        return [Direction.TURN_RIGHT.value, Direction.STRAIGHT.value]
+    if cor_loc == CorLoc(0, 0, 1, 0) and dock_id == 1:
+        return [Direction.STRAIGHT.value]
+    assert cor_loc not in [CorLoc(0, 1, 0, 0), CorLoc(0, 0, 1, 0)], \
+        "route_corridor_to_dock: robot in REST cannot be called to dock other than IMPORT"
+    # special cases: robot just left IMPORT dock is called to PACKING
+    if cor_loc == CorLoc(1, 0, 2, 0) and dock_id == 2:
+        return [Direction.STRAIGHT.value]
+    assert cor_loc != CorLoc(1, 0, 2, 0) or dock_id == 0, "route_corridor_to_dock: robot in IMPORT cannot be called"
+    # normal cases
     if dock_id == 0:
         half_dest = CorLoc(0, 1, 0, 0)
     elif dock_id == 1:
@@ -225,8 +237,7 @@ def route_corridor_to_dock(cor_loc, dock_id):
         half_dest = CorLoc(2, 1, 2, 0)
     else:
         raise Exception("route_corridor_to_dock: invalid dock_id", dock_id)
-    route = route_road_to_road(cor_loc, half_dest) + [Direction.TURN_RIGHT.value]
-    return route
+    return route_road_to_road(cor_loc, half_dest) + [Direction.TURN_RIGHT.value]
 
 def corridor_on_shelf_to_left(shelf_loc):
     if shelf_loc.y % 2 == 0:
@@ -241,6 +252,10 @@ def corridor_on_shelf_to_right(shelf_loc):
 
 def route_corridor_to_shelf(cor_loc, shelf_loc):
     print("corridor", cor_loc, "to shelf", shelf_loc)
+    # this function cannot be called in dock area
+    assert cor_loc not in [CorLoc(0, 1, 0, 0), CorLoc(0, 0, 1, 0), CorLoc(1, 1, 1, 0), CorLoc(1, 0, 2, 0),
+                           CorLoc(2, 1, 2, 0), CorLoc(2, 0, 3, 0)], "route_corridor_to_shelf: cannot be planned from dock area"
+    # if the robot is in REST area
     if cor_loc.to_x <= shelf_loc.x:
         shelf_corloc = corridor_on_shelf_to_right(shelf_loc)
         last_road_orientation = Orientation.RIGHT
@@ -350,9 +365,14 @@ def pend_fetching_task_to(container_id, dock_id):
 
 # return "" if no free robots at the moment
 def nearest_free_robot_to_shelf(shelf_loc, container_id, dock_id):
-    print("nearest robot to shelf")
-    # if there's no free robot, add the task to pending list
+    '''
+    Find the nearest free robot to a shelf. If the chosen robot in REST area, choose the line head. If none free, add a FOR_CONTAINER task to pending list
+
+    :return: The chosen robot ip. If none, return ""
+    '''
+    print("nearest robot to shelf", shelf_loc)
     with free_list_lock:
+        # if there's no free robot, add the task to pending list
         if len(free_robots) == 0:
             pend_fetching_task_to(container_id, dock_id)
             return ""
@@ -427,12 +447,14 @@ def send_route(robot_ip, message):
     data = receive_message(robot_sockets[robot_ip], 1)
     reply_status = unpack("B", data)[0]
     if reply_status == 1:
+        print("send_route: route received successfully")
         return None
     # if the robot is not at what I expect it to be
     # receive an updated position
     elif reply_status == 0:
         data = receive_message(robot_sockets[robot_ip], 4)
         (from_x, from_y, to_x, to_y) = unpack("B" * 4, data)
+        print("send_route: route received, position change to", (from_x, from_y, to_x, to_y))
         return CorLoc(from_x, from_y, to_x, to_y)
     else:
         raise Exception("send_route: unknown reply status", reply_status)
@@ -493,7 +515,7 @@ def robot_perform_task(robot_ip, task):
 def add_free_robot(robot_ip):
     with free_list_lock, pending_lock:
         i = 0
-        while len(pending_tasks) > 0:
+        while i < len(pending_tasks):
             task = pending_tasks[i]
             if task.type == TaskType.FOR_CONTAINER:
                 (container_id, row, col, slot, level, status) = db_manager.get_container_info(task.dest_container_id)
@@ -527,4 +549,11 @@ def add_free_robot(robot_ip):
         # if there's no task can be done, add the robot to free list
         free_robots.append(robot_ip)
         return None
+
+def delete_robot(robot_ip):
+    with rest_lock, free_list_lock:
+        if robot_ip in robots_on_rest:
+            robots_on_rest.remove(robot_ip)
+        if robot_ip in free_robots:
+            free_robots.remove(robot_ip)
 
