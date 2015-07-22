@@ -306,7 +306,7 @@ def empty_slots_of_shelf(x, y):
     # exclude those have been occupied by containers
     db = pymysql.connect(host=HOST, user=USER, db=DB)
     cursor = db.cursor()
-    cursor.execute("SELECT slot, level FROM Containers WHERE (status='ON_SHELF' OR status='RESERVED') AND x=(%s) AND y=(%s)", (x, y))
+    cursor.execute("SELECT slot, level FROM Containers WHERE (status='ON_SHELF' OR status='RESERVED' OR status='TO_SHELF') AND x=(%s) AND y=(%s)", (x, y))
     row_number = cursor.rowcount
     for i in range(row_number):
         (slot, level) = cursor.fetchone()

@@ -357,13 +357,15 @@ def nearest_free_robot_to_dock(dock_id):
         # find the nearest among the free robots
         smallest_distance = sys.maxsize
         chosen_robot_ip = ""
-        for ip, loc in robot_position.items():
-            distance = dis_estimate_corridor_to_dock(loc, dock_id)
+        for ip in free_robots:
+            distance = dis_estimate_corridor_to_dock(robot_position[ip], dock_id)
             if distance < smallest_distance:
                 smallest_distance = distance
                 chosen_robot_ip = ip
         # if the robot is in REST area, call the line head instead
+        print("before try:", chosen_robot_ip, robots_on_rest)
         chosen_robot_ip = try_call_rest_robot(chosen_robot_ip)
+        print("after try:", chosen_robot_ip, robots_on_rest)
         # mark the chosen robot busy
         free_robots.remove(chosen_robot_ip)
         return chosen_robot_ip
@@ -388,8 +390,8 @@ def nearest_free_robot_to_shelf(shelf_loc, container_id, dock_id):
         # find the nearest among the free robots
         smallest_distance = sys.maxsize
         chosen_robot_ip = ""
-        for ip, loc in robot_position.items():
-            distance = dis_estimate_corridor_to_shelf(loc, shelf_loc.x, shelf_loc.y)
+        for ip in free_robots:
+            distance = dis_estimate_corridor_to_shelf(robot_position[ip], shelf_loc.x, shelf_loc.y)
             if distance < smallest_distance:
                 smallest_distance = distance
                 chosen_robot_ip = ip
@@ -427,6 +429,7 @@ def robot_enter_rest(robot_ip):
 def try_call_rest_robot(robot_ip):
     with rest_lock:
         if robot_ip in robots_on_rest:
+            print("current rest line:", robots_on_rest)
             print("A robot chosen out of REST area")
             return robots_on_rest.pop(0)
         else:
