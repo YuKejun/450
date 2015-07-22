@@ -3,7 +3,12 @@ from socket import *
 import sys
 import select
 
-HOST = 'localhost'
+conn_num = input("Which robot do you want: ")
+conn_num = int(conn_num)
+if conn_num == 0:
+    HOST = 'localhost'
+elif conn_num == 1:
+    HOST = '192.168.8.83'
 # PORT = 29876  # our port from before
 PORT = 29876
 ADDR = (HOST, PORT)
@@ -51,7 +56,8 @@ while True:
             print(data_list)
             route_type = data_list[0]
             route_length = data_list[5]
-            client.recv(route_length)
+            route = client.recv(route_length)
+            print("Receive route: ", unpack("B" * route_length, route))
             if route_type == 0:
                 client.recv(4)
             # TODO: true reply; currently reply everything fine for any case
