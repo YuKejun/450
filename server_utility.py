@@ -67,6 +67,7 @@ def robot_join(conn, addr):
     planning.update_robot_pos(robot_ip, 0, 0, 1, 0)
     planning.robot_enter_rest(robot_ip)
     db_manager.robot_join(addr[0])
+    conn.sendall(pack("B", 3))
     # tell it where to go
     # if there's no task, just do nothing
     assigned_task = planning.add_free_robot(robot_ip)
@@ -229,6 +230,10 @@ def worker_leave(conn, addr):
 def arrive_rest(conn, addr):
     print("Robot", addr[0], "has arrived REST top")
 
+# command 16 []
+def receive_heartbeat(conn, addr):
+    pass
+
 def robot_leave(robot_ip):
     db_manager.robot_leave(robot_ip)
     del robot_sockets[robot_ip]
@@ -238,4 +243,4 @@ def robot_leave(robot_ip):
 
 command_funcs = [request_robot, request_item, robot_join, robot_update_pos, container_fetched, container_stored,
                  apply_crossing, alarm_report, cancel_alarm, check_in, check_out, arrive_dock, dismiss_robot,
-                 worker_join, worker_leave, arrive_rest]
+                 worker_join, worker_leave, arrive_rest, receive_heartbeat]

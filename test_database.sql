@@ -1,0 +1,4 @@
+INSERT INTO Containers VALUES (11, 0, 3, 1, 2, "ON_SHELF");
+INSERT INTO Items VALUES (7, 11);
+INSERT INTO Containers VALUES (1, 2, 4, 1, 2, "ON_SHELF");
+INSERT INTO Items VALUES (12, 1);

@@ -87,13 +87,16 @@ class HighwayManager:
 
     def let_waiting_go(self):
         with self.waiting_lock:
+            granted_robots = []
             for robot_ip in self.waiting_robots.keys():
                 if not self.does_contradict_with_occupants(CrossLoc(self.waiting_robots[robot_ip].corloc.to_x,
                                                                          self.waiting_robots[robot_ip].corloc.to_y)):
                     self.waiting_robots[robot_ip].conn.sendall(pack("B", 1))
                     print("roobt", robot_ip, "is permitted into crossing", self.number)
                     self.occupant_robots[robot_ip] = self.waiting_robots[robot_ip]
-                    del self.waiting_robots[robot_ip]
+                    granted_robots.append(robot_ip)
+            for robot_ip in granted_robots:
+                del self.waiting_robots[robot_ip]
 
     def update_robot_position(self, robot_ip, new_corloc):
         with self.occupant_lock:

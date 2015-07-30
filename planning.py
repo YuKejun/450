@@ -456,20 +456,24 @@ def get_robot_pos(robot_ip):
 def send_route(robot_ip, message):
     robot_sockets[robot_ip].sendall(message)
     # wait till get confirmation from robot
-    data = receive_message(robot_sockets[robot_ip], 1)
-    reply_status = unpack("B", data)[0]
-    if reply_status == 1:
-        print("send_route: route received successfully")
-        return None
-    # if the robot is not at what I expect it to be
-    # receive an updated position
-    elif reply_status == 0:
-        data = receive_message(robot_sockets[robot_ip], 4)
-        (from_x, from_y, to_x, to_y) = unpack("B" * 4, data)
-        print("send_route: route received, position change to", (from_x, from_y, to_x, to_y))
-        return CorLoc(from_x, from_y, to_x, to_y)
-    else:
-        raise Exception("send_route: unknown reply status", reply_status)
+    while True:
+        data = receive_message(robot_sockets[robot_ip], 1)
+        reply_status = unpack("B", data)[0]
+        if reply_status == 1:
+            print("send_route: route received successfully")
+            return None
+        # if the robot is not at what I expect it to be
+        # receive an updated position
+        elif reply_status == 0:
+            data = receive_message(robot_sockets[robot_ip], 4)
+            (from_x, from_y, to_x, to_y) = unpack("B" * 4, data)
+            print("send_route: route received, position change to", (from_x, from_y, to_x, to_y))
+            return CorLoc(from_x, from_y, to_x, to_y)
+        # ignore heartbeat
+        elif reply_status == 16:
+            continue
+        else:
+            raise Exception("send_route: unknown reply status", reply_status)
 
 # send new route
 # (maybe) set dest_dock

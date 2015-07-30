@@ -14,6 +14,7 @@ sockets = {}  # conn -> addr
 
 # open the server socket for connection
 serv = socket(AF_INET, SOCK_STREAM)
+serv.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 serv.bind(('', PORT))
 serv.listen(5)
 print("listening ...")
@@ -22,6 +23,7 @@ while True:
     for evented_conn in select_result:
         if evented_conn == serv:
             (conn, client_addr) = serv.accept()
+            conn.setsockopt(SOL_SOCKET, SO_KEEPALIVE, 1)
             print("serving", client_addr)
             sockets[conn] = client_addr
         else:

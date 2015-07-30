@@ -51,6 +51,7 @@ while True:
     elif client in select_result:
         # if have received a route
         command_type = unpack("B", client.recv(1))[0]
+        print("command_type:", command_type)
         if command_type == 0:
             data_list = unpack("B" * 6, client.recv(6))
             print(data_list)

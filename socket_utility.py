@@ -3,7 +3,11 @@ from socket import *
 def receive_message(conn, length):
     data = b""
     while len(data) < length:
-        data += conn.recv(length - len(data))
+        received_data = conn.recv(length - len(data))
+        # assert received_data, "Connection " + str(conn) + "closed"
+        if not received_data:
+            raise error("Connection " + conn.getpeername()[0] + " closed")
+        data += received_data
     assert len(data) == length, "receive_message: receive message of wrong length"
     return data
 
